@@ -8,27 +8,45 @@ from langchain.llms.base import LLM
 from langchain.schema.output import GenerationChunk
 
 
-class CaikitLLM(LLM):
+class CaikitLLM(LLM):    
+    inference_server_url: str = ""
+    model_id: str = ""
+    certificate_chain: Optional[str] = None
+    streaming: bool = False
+    client: Union[HttpClient, GrpcClient] = None
+    max_new_tokens: int = 512,
+    min_new_tokens: int = 10,
+    run_manager: Optional[CallbackManagerForLLMRun] = None,
+    
     def __init__(
         self,
         inference_server_url: str,
         model_id: str,
         certificate_chain: Optional[str] = None,
         streaming: bool = False,
+        max_new_tokens: int = 512,
+        min_new_tokens: int = 10,
+        run_manager: Optional[CallbackManagerForLLMRun] = None
     ):
         super().__init__()
 
-        self.inference_server = inference_server_url
+        self.inference_server_url = inference_server_url
         self.model_id = model_id
-
+        self.streaming = streaming
+        self.max_new_tokens = max_new_tokens
+        self.min_new_tokens = min_new_tokens
+        self.run_manager = run_manager
+        
+        verify=True
         if certificate_chain:
             with open(certificate_chain, "rb") as fh:
                 chain = fh.read()
         else:
             chain = None
+            verify= False
 
         if inference_server_url.startswith("http"):
-            client = HttpClient(inference_server_url, ca_cert=chain)
+            client = HttpClient(inference_server_url, ca_cert_path=chain, verify=verify)
         else:
             try:
                 host, port = inference_server_url.split(":")
@@ -40,7 +58,7 @@ class CaikitLLM(LLM):
                     '"host:port" or "http[s]://host:port/path"'
                 )
 
-            client = GrpcClient(host, port, ca_cert=chain)
+            client = GrpcClient(host, port, ca_cert=chain, verify=verify)
 
         self.client: Union[HttpClient, GrpcClient] = client
 
@@ -52,11 +70,8 @@ class CaikitLLM(LLM):
         self,
         prompt: str,
         preserve_input_text: bool = False,
-        max_new_tokens: int = 512,
-        min_new_tokens: int = 10,
         device: str = "",
         stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> str:
         if self.streaming:
@@ -64,15 +79,15 @@ class CaikitLLM(LLM):
                 self._stream(
                     prompt=prompt,
                     preserve_input_text=preserve_input_text,
-                    max_new_tokens=max_new_tokens,
-                    min_new_tokens=min_new_tokens,
+                    max_new_tokens=self.max_new_tokens,
+                    min_new_tokens=self.min_new_tokens,
                     device=device,
                     stop=stop,
-                    run_manager=run_manager,
+                    run_manager=self.run_manager,
                     **kwargs,
                 )
             )
-        if run_manager:
+        if self.run_manager:
             warn("run_manager is ignored for non-streaming use cases")
 
         if device or stop:
@@ -82,8 +97,8 @@ class CaikitLLM(LLM):
             self.model_id,
             prompt,
             preserve_input_text=preserve_input_text,
-            max_new_tokens=max_new_tokens,
-            min_new_tokens=min_new_tokens,
+            max_new_tokens=self.max_new_tokens,
+            min_new_tokens=self.min_new_tokens,
         )
 
     def _stream(
@@ -108,7 +123,7 @@ class CaikitLLM(LLM):
             min_new_tokens=min_new_tokens,
         ):
             chunk = GenerationChunk(text=token)
-            yield chunk
+            yield chunk.text
 
             if run_manager:
                 run_manager.on_llm_new_token(chunk.text)
