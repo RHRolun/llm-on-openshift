@@ -65,7 +65,9 @@ python-dotenv==1.0.0; python_version >= '3.8'
 python-multipart==0.0.6; python_version >= '3.7'
 pytz==2023.3.post1
 pyyaml==6.0.1; python_version >= '3.6'
-redis==5.0.1; python_version >= '3.7'
+pgvector==0.2.3
+caikit-nlp-client
+psycopg
 referencing==0.30.2; python_version >= '3.8'
 regex==2023.10.3; python_version >= '3.7'
 requests==2.31.0; python_version >= '3.7'

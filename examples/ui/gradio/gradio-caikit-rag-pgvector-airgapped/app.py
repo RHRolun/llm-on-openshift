@@ -19,7 +19,7 @@ load_dotenv()
 
 # Parameters
 
-APP_TITLE = os.getenv('APP_TITLE', 'Detta är ett TEST')
+APP_TITLE = os.getenv('APP_TITLE', 'ChatBot')
 
 INFERENCE_SERVER_URL = os.getenv('INFERENCE_SERVER_URL')
 MODEL_ID = os.getenv('MODEL_ID')
