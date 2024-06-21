@@ -94,7 +94,7 @@ spec:
             successThreshold: 1
             failureThreshold: 24
           terminationMessagePolicy: File
-          image: 'quay.io/rlundber/rag_pgvector_airgapped:latest' #image: 'quay.io/rh-aiservices-bu/gradio-caikit-rag-redis:latest'
+          image: 'quay.io/rlundber/rag_pgvector_airgapped:0.3'
           volumeMounts:
             - name: caikit-certificate
               mountPath: /opt/app-root/src/certificate.pem

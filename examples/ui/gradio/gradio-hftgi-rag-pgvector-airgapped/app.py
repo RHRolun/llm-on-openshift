@@ -6,6 +6,7 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import Optional
 
+import caikit_tgis_langchain
 import gradio as gr
 from dotenv import load_dotenv
 from langchain.callbacks.base import BaseCallbackHandler
@@ -13,23 +14,19 @@ from langchain.chains import RetrievalQA
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain.vectorstores.pgvector import PGVector
-from langchain.llms import HuggingFaceTextGenInference
 
 load_dotenv()
 
 # Parameters
 
-APP_TITLE = os.getenv('APP_TITLE', 'Detta är ett TEST')
+APP_TITLE = os.getenv('APP_TITLE', 'ChatBot')
 
 INFERENCE_SERVER_URL = os.getenv('INFERENCE_SERVER_URL')
+MODEL_ID = os.getenv('MODEL_ID')
 MAX_NEW_TOKENS = int(os.getenv('MAX_NEW_TOKENS', 512))
-TOP_K = int(os.getenv('TOP_K', 10))
-TOP_P = float(os.getenv('TOP_P', 0.95))
-TYPICAL_P = float(os.getenv('TYPICAL_P', 0.95))
-TEMPERATURE = float(os.getenv('TEMPERATURE', 0.01))
-REPETITION_PENALTY = float(os.getenv('REPETITION_PENALTY', 1.03))
+MIN_NEW_TOKENS = int(os.getenv('MAX_NEW_TOKENS', 100))
 TEMPLATE = os.getenv('TEMPLATE',"""<s>[INST] <<SYS>>
-You are a helpful, respectful and honest assistant named HatBot answering questions about OpenShift Data Science, aka RHODS.
+You are a helpful, respectful and honest assistant named HatBot answering questions about OpenShift AI, aka RHOAI.
 You will be given a question you need to answer, and a context to provide you with information. You must answer the question based as much as possible on this context.
 Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.
 
@@ -43,7 +40,8 @@ Context: {context} [/INST]
 DB_CONNECTION_STRING = os.getenv('DB_CONNECTION_STRING')
 DB_COLLECTION_NAME = os.getenv('DB_COLLECTION_NAME')
 
-STREAMING = os.getenv('STREAMING', True)
+STREAMING = False
+TIMEOUT = 300
 
 # Streaming implementation
 class QueueCallback(BaseCallbackHandler):
@@ -104,7 +102,7 @@ q = Queue()
 # LLM chain implementation #
 ############################
 
-# Document store: Redis vector store
+# Document store: PGvector store
 model_path = "./model/all-mpnet-base-v2"
 embeddings = HuggingFaceEmbeddings(model_name=model_path)
 store = PGVector(
@@ -113,17 +111,15 @@ store = PGVector(
     embedding_function=embeddings)
 
 # LLM
-llm = HuggingFaceTextGenInference(
+llm = caikit_tgis_langchain.CaikitLLM(
     inference_server_url=INFERENCE_SERVER_URL,
+    model_id=MODEL_ID,
     max_new_tokens=MAX_NEW_TOKENS,
-    top_k=TOP_K,
-    top_p=TOP_P,
-    typical_p=TYPICAL_P,
-    temperature=TEMPERATURE,
-    repetition_penalty=REPETITION_PENALTY,
-    streaming=True,
-    verbose=False,
-    callbacks=[QueueCallback(q)]
+    min_new_tokens=MIN_NEW_TOKENS,
+    certificate_chain="", #certificate.pem
+    streaming=STREAMING,
+    timeout=TIMEOUT,
+    run_manager=QueueCallback(q)
 )
 
 QA_CHAIN_PROMPT = PromptTemplate.from_template(TEMPLATE)
@@ -131,8 +127,8 @@ QA_CHAIN_PROMPT = PromptTemplate.from_template(TEMPLATE)
 qa_chain = RetrievalQA.from_chain_type(
     llm,
     retriever=store.as_retriever(
-        search_type="similarity_score_threshold",
-        search_kwargs={"k": 4, "score_threshold": 0.2 }),
+        search_type="similarity",
+        search_kwargs={"k": 4, "distance_threshold": 0.5}),
     chain_type_kwargs={"prompt": QA_CHAIN_PROMPT},
     return_source_documents=True
     )
@@ -143,16 +139,18 @@ def ask_llm(message, history):
         for next_token, content in stream(message):
             yield(content)
     else:
-        return qa_chain({"query": message})
+        response = qa_chain({"query": message})
+        print("RESPONSE ", response)
+        yield f"{response['result']}\nSources:{response['source_documents']}"
 
 with gr.Blocks(title="HatBot", css="footer {visibility: hidden}") as demo:
     chatbot = gr.Chatbot(
         show_label=False,
         avatar_images=(None,'assets/robot-head.svg'),
         render=False,
-        ).style(height=600)
+        )
     gr.ChatInterface(
-        ask_llm,
+        fn=ask_llm,
         chatbot=chatbot,
         clear_btn=None,
         retry_btn=None,
